@@ -11,7 +11,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
     # Checkout Code
@@ -24,6 +24,15 @@ jobs:
       with:
         java-version: 11
         distribution: temurin
+
+    # Cache Maven Dependencies
+    - name: Cache Maven Dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
 
     # Set up Android Environment
     - name: Set Up Android Environment
@@ -65,7 +74,6 @@ jobs:
               sleep 15
             fi
           done
-
           for i in $(seq 1 5); do
             if adb shell input keyevent 82; then
               echo "Key event sent successfully."
@@ -89,6 +97,16 @@ jobs:
       run: |
         echo "Starting Appium Tests..."
         mvn clean test -Dtest=newUserFlow.java | tee mvn-output.log
+
+    # Upload Logs for Debugging
+    - name: Upload Logs
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: logs
+        path: |
+          adb-logcat.log
+          mvn-output.log
 
     # Shutdown Emulator
     - name: Shutdown Emulator
