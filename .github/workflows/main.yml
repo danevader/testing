@@ -14,27 +14,18 @@ jobs:
     timeout-minutes: 90
 
     steps:
-    # Checkout Code
+    # Step 1: Checkout Code
     - name: Checkout Code
       uses: actions/checkout@v3
 
-    # Set up Java
+    # Step 2: Set Up Java
     - name: Set up Java
       uses: actions/setup-java@v3
       with:
         java-version: 11
         distribution: temurin
 
-    # Cache Maven Dependencies
-    - name: Cache Maven Dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-maven-
-
-    # Set up Android Environment
+    # Step 3: Set Up Android Environment
     - name: Set Up Android Environment
       run: |
         mkdir -p $HOME/android-sdk/cmdline-tools
@@ -44,80 +35,86 @@ jobs:
         export ANDROID_HOME=$HOME/android-sdk
         export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
         yes | sdkmanager --licenses
-        sdkmanager "platform-tools" "platforms;android-30" "build-tools;30.0.3" "emulator" "system-images;android-30;google_apis;x86"
+        sdkmanager "platform-tools" "platforms;android-29" "build-tools;29.0.3" "emulator" "system-images;android-29;google_apis;x86"
 
-    # Start Android Emulator
+    # Step 4: Start Android Emulator
     - name: Start Android Emulator
       uses: reactivecircus/android-emulator-runner@v2
       with:
-        api-level: 30
+        api-level: 29
         target: google_apis
         arch: x86
-        profile: pixel_2
-        emulator-options: "-verbose -no-window -no-snapshot -gpu swiftshader_indirect -no-boot-anim"
-        force-avd-creation: true
-        disable-linux-hw-accel: true
+        profile: Nexus 5X
         ram-size: 2048
-        disk-size: 4G
+        disk-size: 6G
         cores: 2
-        emulator-boot-timeout: 1800
-        script: |
-          adb wait-for-device
-          for i in $(seq 1 10); do
-            if adb -s emulator-5554 shell getprop sys.boot_completed | grep -q "1"; then
-              echo "Emulator fully booted!"
-              break
-            else
-              echo "Waiting for emulator to boot... ($i/10)"
-              sleep 15
-            fi
-          done
-          for i in $(seq 1 5); do
-            if adb shell input keyevent 82; then
-              echo "Key event sent successfully."
-              break
-            else
-              echo "Retrying key event... ($i/5)"
-              sleep 5
-            fi
-          done
+        emulator-options: "-no-window -gpu swiftshader_indirect -no-boot-anim"
+        emulator-boot-timeout: 3000
 
-    # Debugging: Validate ADB and Emulator
-    - name: Validate ADB and Emulator
+    # Step 5: Wait for Emulator and Disable Animations
+    - name: Wait for Emulator and Disable Animations
       run: |
-        echo "Validating ADB devices..."
-        adb devices
-        adb logcat -d > adb-logcat.log || echo "ADB logcat failed."
-        echo "ADB Logcat:"
-        cat adb-logcat.log || echo "No ADB logs found."
+        adb wait-for-device
+        for i in $(seq 1 5); do
+          adb -s emulator-5554 shell settings put system screen_off_timeout 2147483647 && break
+          echo "Retrying screen_off_timeout command... ($i/5)"
+          sleep 5
+        done
+        adb -s emulator-5554 shell settings put global window_animation_scale 0.0
+        adb -s emulator-5554 shell settings put global transition_animation_scale 0.0
 
-    # Run Appium Tests
-    - name: Run Appium Tests
+    # Step 6: Debug: List Files
+    - name: Debug: List Files
       run: |
-        echo "Starting Appium Tests..."
-        mvn clean test -Dtest=newUserFlow.java | tee mvn-output.log
+        echo "Listing all files in the workspace:"
+        ls -R
 
-    # Debugging: Ensure Logs Are Created
+    # Step 7: Validate Log Creation
     - name: Validate Log Creation
       run: |
-        echo "Checking for log files..."
-        ls -l adb-logcat.log || echo "ADB logcat.log not found."
-        ls -l mvn-output.log || echo "Maven output log not found."
+        if [ -f adb-logcat.log ]; then
+          echo "ADB log created."
+        else
+          echo "ADB log not found."
+        fi
+        if [ -f mvn-output.log ]; then
+          echo "Maven output log created."
+        else
+          echo "Maven output log not found."
+        fi
 
-    # Upload Logs for Debugging
+    # Step 8: Handle Missing Logs
+    - name: Handle Missing Logs
+      run: |
+        if [ ! -f adb-logcat.log ]; then
+          echo "No ADB logs were generated." > adb-logcat.log
+        fi
+        if [ ! -f mvn-output.log ]; then
+          echo "No Maven logs were generated." > mvn-output.log
+        fi
+
+    # Step 9: Run Appium Tests
+    - name: Run Appium Tests
+      run: |
+        mvn clean test -Dtest=newUserFlow.java | tee mvn-output.log
+
+    # Step 10: Capture Logs
+    - name: Capture Logs
+      run: |
+        adb logcat -d > adb-logcat.log || echo "Failed to capture logcat."
+        adb shell dumpsys > adb-dumpsys.log || echo "Failed to capture dumpsys."
+
+    # Step 11: Upload Logs
     - name: Upload Logs
-      if: always()
       uses: actions/upload-artifact@v3
       with:
         name: logs
         path: |
           adb-logcat.log
+          adb-dumpsys.log
           mvn-output.log
         if-no-files-found: warn
 
-    # Shutdown Emulator
+    # Step 12: Shutdown Emulator
     - name: Shutdown Emulator
-      run: |
-        echo "Shutting down emulator..."
-        adb emu kill || pkill -f emulator
-
+      run: adb emu kill || pkill -f emulator
