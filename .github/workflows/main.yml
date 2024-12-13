@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest # macOS for Apple Silicon or Intel runners
+    runs-on: ubuntu-latest # Use Linux runner
 
     steps:
     # Step 1: Checkout Code
@@ -20,9 +20,17 @@ jobs:
         java-version: 17
         distribution: temurin
 
-    # Step 3: Verify Java Version
-    - name: Verify Java Version
-      run: java -version
+    # Step 3: Set Up Android Environment
+    - name: Set Up Android SDK
+      run: |
+        mkdir -p $HOME/android-sdk/cmdline-tools
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -O cmdline-tools.zip
+        unzip -q cmdline-tools.zip -d $HOME/android-sdk/cmdline-tools
+        mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
+        export ANDROID_HOME=$HOME/android-sdk
+        export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
+        yes | sdkmanager --licenses
+        sdkmanager "platform-tools" "emulator" "platforms;android-30" "system-images;android-30;google_apis;x86_64"
 
     # Step 4: Install Appium Server
     - name: Install Appium Server
@@ -36,42 +44,32 @@ jobs:
         echo "Appium Server Initialized"
       shell: bash
 
-    # Step 5: Start Emulator and Run Tests
-    - name: Start Emulator and Run Tests
-      uses: reactivecircus/android-emulator-runner@v2
-      with:
-        api-level: 30
-        target: google_apis
-        arch: x86_64
-        profile: Nexus 6
-        ram-size: 2048
-        disk-size: 6G
-        emulator-boot-timeout: 600
-        emulator-options: "-no-snapshot -gpu swiftshader_indirect -no-boot-anim -accel off"
-        cores: 2
-        avd-name: test
-        force-avd-creation: true
-        script: |
-          # Wait for emulator to boot
-          adb wait-for-device
-          for i in {1..30}; do
-            BOOT_COMPLETED=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
-            if [ "$BOOT_COMPLETED" == "1" ]; then
-              echo "Emulator is fully booted!"
-              adb shell input keyevent 82 # Unlock screen
-              break
-            else
-              echo "Waiting for emulator to boot... ($i/30)"
-              sleep 10
-            fi
-          done
-          if [ "$BOOT_COMPLETED" != "1" ]; then
-            echo "Emulator failed to boot in time."
-            exit 1
+    # Step 5: Start Emulator
+    - name: Start Emulator
+      run: |
+        export ANDROID_HOME=$HOME/android-sdk
+        export PATH=$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
+        echo "Creating AVD..."
+        echo no | avdmanager create avd -n test -k "system-images;android-30;google_apis;x86_64" --device "Nexus 6"
+        echo "hw.gpu.mode=swiftshader_indirect" >> $HOME/.android/avd/test.avd/config.ini
+        echo "hw.ramSize=2048" >> $HOME/.android/avd/test.avd/config.ini
+        emulator -avd test -no-snapshot -gpu swiftshader_indirect -no-boot-anim -accel off -verbose > emulator.log 2>&1 &
+        adb wait-for-device
+        for i in {1..30}; do
+          BOOT_COMPLETED=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+          if [ "$BOOT_COMPLETED" == "1" ]; then
+            echo "Emulator is fully booted!"
+            adb shell input keyevent 82 # Unlock screen
+            break
+          else
+            echo "Waiting for emulator to boot... ($i/30)"
+            sleep 10
           fi
-          
-          # Run tests
-          mvn clean test -Dtest=newUserFlow.java
+        done
+        if [ "$BOOT_COMPLETED" != "1" ]; then
+          echo "Emulator failed to boot in time."
+          exit 1
+        fi
 
     # Step 6: Debug Logs
     - name: Capture Logs
@@ -81,7 +79,11 @@ jobs:
         adb logcat -d > emulator-logcat.log
         cat appium-server.log
 
-    # Step 7: Upload Logs
+    # Step 7: Run Tests
+    - name: Run Appium Tests
+      run: mvn clean test -Dtest=newUserFlow.java
+
+    # Step 8: Upload Logs
     - name: Upload Logs
       uses: actions/upload-artifact@v3
       with:
@@ -91,6 +93,6 @@ jobs:
           emulator-logcat.log
           emulator-props.log
 
-    # Step 8: Shut Down Emulator
+    # Step 9: Shut Down Emulator
     - name: Shutdown Emulator
       run: adb emu kill || pkill -f emulator
