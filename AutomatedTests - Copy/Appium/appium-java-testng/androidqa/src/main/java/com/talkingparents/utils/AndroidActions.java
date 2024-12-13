@@ -15,21 +15,21 @@ import io.appium.java_client.android.AndroidDriver;
 
 public class AndroidActions {
 	
-AndroidDriver driver;
+static AndroidDriver driver;
 	
 	public AndroidActions(AndroidDriver driver) {
 		
 		this.driver =driver;
 }
 	//When scrolling to text
-public void scrollToTextAction(String text)
+public static void scrollToTextAction(String text)
 {
 	driver.findElement(AppiumBy.androidUIAutomator("new UiScrollable(new UiSelector()).scrollIntoView(text(\""+text+"\"));"));
 }
 
 //No prior idea of where to scroll
 //Java
-public void scrollToEndAction() {
+public static void scrollToEndAction() {
 
 	boolean canScrollMore;
 	do{

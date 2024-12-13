@@ -48,7 +48,7 @@ public class globalPage extends AndroidActions{
 	//More section//
 
 	@AndroidFindBy(id = "com.talkingparents.tpandroid:id/info_library")
-	public WebElement infoLibraryFeature;
+	public static WebElement infoLibraryFeature;
 
 	@AndroidFindBy(id = "com.talkingparents.tpandroid:id/journal")
 	public static WebElement journalFeature;

@@ -1,4 +1,4 @@
-package com.talkingparents.positive.journal;
+package com.talkingparents.smoke;
 
 import java.time.Duration;
 
