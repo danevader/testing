@@ -7,10 +7,10 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # Use a Linux runner for compatibility
+    runs-on: ubuntu-latest
 
     steps:
-    # Step 1: Checkout the Repository
+    # Step 1: Checkout Code
     - name: Checkout Code
       uses: actions/checkout@v2
 
@@ -21,60 +21,52 @@ jobs:
         java-version: 17
         distribution: temurin
 
-    # Step 3: Set Up Android SDK
-    - name: Set Up Android SDK
+    # Step 3: Install Android SDK
+    - name: Install Android SDK
       run: |
-        # Set up directories
         mkdir -p $HOME/android-sdk/cmdline-tools
-        # Download and install cmdline-tools
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -O cmdline-tools.zip
         unzip -q cmdline-tools.zip -d $HOME/android-sdk/cmdline-tools
         mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
         export ANDROID_HOME=$HOME/android-sdk
         export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
-        # Accept licenses and install required packages
         yes | sdkmanager --licenses
         sdkmanager "platform-tools" "emulator" "cmdline-tools;latest" "system-images;android-30;google_apis;x86_64"
 
     # Step 4: Create and Start Emulator
-    - name: Start Emulator
+    - name: Create and Start Emulator
       run: |
         export ANDROID_HOME=$HOME/android-sdk
         export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
-        # Create a new AVD
         echo "Creating AVD..."
         echo no | avdmanager create avd -n test -k "system-images;android-30;google_apis;x86_64" --device "Nexus 6"
-        # Configure AVD settings
         echo "hw.gpu.mode=swiftshader_indirect" >> $HOME/.android/avd/test.avd/config.ini
-        echo "hw.ramSize=2048" >> $HOME/.android/avd/test.avd/config.ini
-        # Start the emulator
-        emulator -avd test -no-snapshot -gpu swiftshader_indirect -no-boot-anim -accel off -verbose > emulator.log 2>&1 &
-        # Wait for the emulator to boot
+        echo "hw.ramSize=1024" >> $HOME/.android/avd/test.avd/config.ini
+        echo "Starting emulator..."
+        emulator -avd test -no-snapshot -gpu off -no-boot-anim -accel off -verbose > emulator.log 2>&1 &
         adb wait-for-device
-        for i in {1..30}; do
+        for i in {1..60}; do
           BOOT_COMPLETED=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
           if [ "$BOOT_COMPLETED" == "1" ]; then
             echo "Emulator is fully booted!"
             adb shell input keyevent 82 # Unlock screen
             break
           else
-            echo "Waiting for emulator to boot... ($i/30)"
+            echo "Waiting for emulator to boot... ($i/60)"
             sleep 10
           fi
         done
         if [ "$BOOT_COMPLETED" != "1" ]; then
           echo "Emulator failed to boot in time."
+          cat emulator.log
           exit 1
         fi
 
-    # Step 5: Install Appium Server
-    - name: Install Appium Server
+    # Step 5: Install and Start Appium Server
+    - name: Install and Start Appium Server
       run: |
         npm install -g appium@1.20.2
         appium -v
-
-    - name: Start Appium Server
-      run: |
         nohup appium --log-level debug > appium-server.log 2>&1 &
         echo "Appium Server Initialized"
 
@@ -86,20 +78,5 @@ jobs:
     # Step 7: Capture Logs
     - name: Capture Logs
       run: |
-        adb devices
-        adb shell getprop > emulator-props.log
-        adb logcat -d > emulator-logcat.log
-
-    # Step 8: Upload Logs for Debugging
-    - name: Upload Logs
-      uses: actions/upload-artifact@v3
-      with:
-        name: logs
-        path: |
-          emulator-logcat.log
-          emulator-props.log
-          appium-server.log
-
-    # Step 9: Shut Down Emulator
-    - name: Shutdown Emulator
-      run: adb emu kill || pkill -f emulator
+        cat emulator.log
+        adb logcat 
