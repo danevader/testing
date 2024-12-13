@@ -64,7 +64,7 @@ jobs:
         adb -s emulator-5554 shell settings put global transition_animation_scale 0.0
 
     # Step 6: Debug: List Files
-    - name: Debug: List Files
+    - name: Debug:List Files
       run: |
         echo "Listing all files in the workspace:"
         ls -R
