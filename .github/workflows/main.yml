@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # Use Linux runner
+    runs-on: ubuntu-latest # Linux runner
 
     steps:
     # Step 1: Checkout Code
@@ -20,7 +20,7 @@ jobs:
         java-version: 17
         distribution: temurin
 
-    # Step 3: Set Up Android Environment
+    # Step 3: Set Up Android SDK
     - name: Set Up Android SDK
       run: |
         mkdir -p $HOME/android-sdk/cmdline-tools
@@ -30,25 +30,17 @@ jobs:
         export ANDROID_HOME=$HOME/android-sdk
         export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
         yes | sdkmanager --licenses
-        sdkmanager "platform-tools" "emulator" "platforms;android-30" "system-images;android-30;google_apis;x86_64"
+        sdkmanager "platform-tools" "emulator" "cmdline-tools;latest" "system-images;android-30;google_apis;x86_64"
 
-    # Step 4: Install Appium Server
-    - name: Install Appium Server
-      run: |
-        npm install -g appium@1.20.2
-        appium -v
-
-    - name: Start Appium Server
-      run: |
-        nohup appium --log-level debug > appium-server.log 2>&1 &
-        echo "Appium Server Initialized"
-      shell: bash
+    # Step 4: Verify avdmanager
+    - name: Verify avdmanager
+      run: which avdmanager
 
     # Step 5: Start Emulator
     - name: Start Emulator
       run: |
         export ANDROID_HOME=$HOME/android-sdk
-        export PATH=$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
+        export PATH=$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
         echo "Creating AVD..."
         echo no | avdmanager create avd -n test -k "system-images;android-30;google_apis;x86_64" --device "Nexus 6"
         echo "hw.gpu.mode=swiftshader_indirect" >> $HOME/.android/avd/test.avd/config.ini
@@ -71,17 +63,16 @@ jobs:
           exit 1
         fi
 
-    # Step 6: Debug Logs
+    # Step 6: Run Appium Tests
+    - name: Run Appium Tests
+      run: mvn clean test -Dtest=newUserFlow.java
+
+    # Step 7: Capture Logs
     - name: Capture Logs
       run: |
         adb devices
         adb shell getprop > emulator-props.log
         adb logcat -d > emulator-logcat.log
-        cat appium-server.log
-
-    # Step 7: Run Tests
-    - name: Run Appium Tests
-      run: mvn clean test -Dtest=newUserFlow.java
 
     # Step 8: Upload Logs
     - name: Upload Logs
@@ -89,7 +80,6 @@ jobs:
       with:
         name: logs
         path: |
-          appium-server.log
           emulator-logcat.log
           emulator-props.log
 
