@@ -33,18 +33,16 @@ jobs:
         yes | sdkmanager --licenses
         sdkmanager "platform-tools" "emulator" "cmdline-tools;latest" "system-images;android-30;google_apis;x86_64"
 
-    # Step 4: Create and Start Emulator
-    - name: Create and Start Emulator
+    # Step 4: Use Prebuilt AVD
+    - name: Install and Start Emulator
       run: |
         export ANDROID_HOME=$HOME/android-sdk
-        export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
-        echo "Creating AVD..."
-        echo no | avdmanager create avd -n test -k "system-images;android-30;google_apis;x86_64" --device "Nexus 6"
-        echo "hw.gpu.mode=swiftshader_indirect" >> $HOME/.android/avd/test.avd/config.ini
-        echo "hw.ramSize=1024" >> $HOME/.android/avd/test.avd/config.ini
-        echo "Starting emulator..."
-        emulator -avd test -no-snapshot -gpu off -no-boot-anim -accel off -verbose > emulator.log 2>&1 &
-        adb wait-for-device
+        export PATH=$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
+        echo "Using prebuilt AVD."
+        sdkmanager --install "system-images;android-30;google_apis;x86_64"
+        echo "hw.gpu.mode=swiftshader_indirect" > $HOME/.android/avd/Nexus6.avd/config.ini
+        emulator -avd Nexus6 -no-snapshot -gpu off -no-boot-anim -accel off -verbose > emulator.log 2>&1 &
+        adb wait-for-device || (echo "ADB could not find the emulator!" && cat emulator.log && exit 1)
         for i in {1..60}; do
           BOOT_COMPLETED=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
           if [ "$BOOT_COMPLETED" == "1" ]; then
@@ -58,25 +56,10 @@ jobs:
         done
         if [ "$BOOT_COMPLETED" != "1" ]; then
           echo "Emulator failed to boot in time."
-          cat emulator.log
           exit 1
         fi
 
-    # Step 5: Install and Start Appium Server
-    - name: Install and Start Appium Server
-      run: |
-        npm install -g appium@1.20.2
-        appium -v
-        nohup appium --log-level debug > appium-server.log 2>&1 &
-        echo "Appium Server Initialized"
-
-    # Step 6: Run Appium Tests
+    # Step 5: Run Appium Tests
     - name: Run Appium Tests
       run: |
         mvn clean test -Dtest=newUserFlow.java
-
-    # Step 7: Capture Logs
-    - name: Capture Logs
-      run: |
-        cat emulator.log
-        adb logcat 
