@@ -36,6 +36,7 @@ jobs:
         export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
         yes | sdkmanager --licenses
         sdkmanager "platform-tools" "platforms;android-29" "build-tools;29.0.3" "emulator" "system-images;android-29;google_apis;x86"
+        adb version || echo "ADB is not properly installed."
 
     # Step 4: Start Android Emulator
     - name: Start Android Emulator
@@ -50,61 +51,33 @@ jobs:
         cores: 2
         emulator-options: "-no-window -gpu swiftshader_indirect -no-boot-anim"
         emulator-boot-timeout: 3000
+        avd-name: test
+        force-avd-creation: true
+        script: |
+          adb wait-for-device
+          for i in $(seq 1 20); do
+            if adb shell getprop sys.boot_completed | grep -q "1"; then
+              echo "Emulator is fully booted!"
+              break
+            else
+              echo "Waiting for emulator to boot... ($i/20)"
+              sleep 10
+            fi
+          done
+          adb devices
 
-    # Step 5: Wait for Emulator and Disable Animations
-    - name: Wait for Emulator and Disable Animations
-      run: |
-        adb wait-for-device
-        for i in $(seq 1 5); do
-          adb -s emulator-5554 shell settings put system screen_off_timeout 2147483647 && break
-          echo "Retrying screen_off_timeout command... ($i/5)"
-          sleep 5
-        done
-        adb -s emulator-5554 shell settings put global window_animation_scale 0.0
-        adb -s emulator-5554 shell settings put global transition_animation_scale 0.0
-
-    # Step 6: Debug: List Files
-    - name: Debug:List Files
-      run: |
-        echo "Listing all files in the workspace:"
-        ls -R
-
-    # Step 7: Validate Log Creation
-    - name: Validate Log Creation
-      run: |
-        if [ -f adb-logcat.log ]; then
-          echo "ADB log created."
-        else
-          echo "ADB log not found."
-        fi
-        if [ -f mvn-output.log ]; then
-          echo "Maven output log created."
-        else
-          echo "Maven output log not found."
-        fi
-
-    # Step 8: Handle Missing Logs
-    - name: Handle Missing Logs
-      run: |
-        if [ ! -f adb-logcat.log ]; then
-          echo "No ADB logs were generated." > adb-logcat.log
-        fi
-        if [ ! -f mvn-output.log ]; then
-          echo "No Maven logs were generated." > mvn-output.log
-        fi
-
-    # Step 9: Run Appium Tests
-    - name: Run Appium Tests
+    # Step 5: Run Tests
+    - name: Run Tests
       run: |
         mvn clean test -Dtest=newUserFlow.java | tee mvn-output.log
 
-    # Step 10: Capture Logs
+    # Step 6: Capture Logs
     - name: Capture Logs
       run: |
         adb logcat -d > adb-logcat.log || echo "Failed to capture logcat."
         adb shell dumpsys > adb-dumpsys.log || echo "Failed to capture dumpsys."
 
-    # Step 11: Upload Logs
+    # Step 7: Upload Logs
     - name: Upload Logs
       uses: actions/upload-artifact@v3
       with:
@@ -115,6 +88,6 @@ jobs:
           mvn-output.log
         if-no-files-found: warn
 
-    # Step 12: Shutdown Emulator
+    # Step 8: Shutdown Emulator
     - name: Shutdown Emulator
       run: adb emu kill || pkill -f emulator
