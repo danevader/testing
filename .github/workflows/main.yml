@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest # macOS for hardware acceleration (HAXM or ARM support)
+    runs-on: macos-latest # Use macOS for hardware acceleration (HAXM or ARM-based emulator)
 
     steps:
     # Step 1: Checkout Code
@@ -36,8 +36,8 @@ jobs:
         echo "Appium Server Initialized"
       shell: bash
 
-    # Step 5: Start Emulator and Wait for Boot
-    - name: Start Emulator
+    # Step 5: Start Emulator and Run Tests
+    - name: Start Emulator and Run Tests
       uses: reactivecircus/android-emulator-runner@v2
       with:
         api-level: 30
@@ -46,44 +46,42 @@ jobs:
         profile: Nexus 6
         ram-size: 2048
         disk-size: 6G
-        emulator-boot-timeout: 600 # Increase timeout to ensure proper boot
+        emulator-boot-timeout: 600
         emulator-options: "-no-snapshot -gpu swiftshader_indirect -no-boot-anim"
-
-    # Step 6: Verify Emulator Boot
-    - name: Wait for Emulator Boot
-      run: |
-        adb wait-for-device
-        for i in {1..30}; do
-          BOOT_COMPLETED=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
-          if [ "$BOOT_COMPLETED" == "1" ]; then
-            echo "Emulator is fully booted!"
-            adb shell input keyevent 82 # Unlock screen
-            break
-          else
-            echo "Waiting for emulator to boot... ($i/30)"
-            sleep 10
+        cores: 2
+        avd-name: test
+        force-avd-creation: true
+        script: |
+          # Wait for emulator to boot
+          adb wait-for-device
+          for i in {1..30}; do
+            BOOT_COMPLETED=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            if [ "$BOOT_COMPLETED" == "1" ]; then
+              echo "Emulator is fully booted!"
+              adb shell input keyevent 82 # Unlock screen
+              break
+            else
+              echo "Waiting for emulator to boot... ($i/30)"
+              sleep 10
+            fi
+          done
+          if [ "$BOOT_COMPLETED" != "1" ]; then
+            echo "Emulator failed to boot in time."
+            exit 1
           fi
-        done
-        if [ "$BOOT_COMPLETED" != "1" ]; then
-          echo "Emulator failed to boot in time."
-          exit 1
-        fi
+          
+          # Run tests
+          mvn clean test -Dtest=newUserFlow.java
 
-    # Step 7: Debug Emulator State
-    - name: Emulator Debug Logs
+    # Step 6: Debug Logs
+    - name: Capture Logs
       run: |
         adb devices
         adb shell getprop > emulator-props.log
         adb logcat -d > emulator-logcat.log
-      shell: bash
+        cat appium-server.log
 
-    # Step 8: Run Appium Tests
-    - name: Run Appium Tests
-      run: mvn clean test -Dtest=newUserFlow.java
-      env:
-        APPIUM_SERVER: http://localhost:4723/wd/hub # Pass the Appium server URL
-
-    # Step 9: Upload Logs
+    # Step 7: Upload Logs
     - name: Upload Logs
       uses: actions/upload-artifact@v3
       with:
@@ -93,6 +91,6 @@ jobs:
           emulator-logcat.log
           emulator-props.log
 
-    # Step 10: Shut Down Emulator
+    # Step 8: Shut Down Emulator
     - name: Shutdown Emulator
       run: adb emu kill || pkill -f emulator
