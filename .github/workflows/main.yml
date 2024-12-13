@@ -45,8 +45,6 @@ jobs:
         export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
         yes | sdkmanager --licenses
         sdkmanager "platform-tools" "platforms;android-30" "build-tools;30.0.3" "emulator" "system-images;android-30;google_apis;x86"
-        echo "ANDROID_HOME=$ANDROID_HOME"
-        echo "PATH=$PATH"
 
     # Start Android Emulator
     - name: Start Android Emulator
@@ -56,12 +54,12 @@ jobs:
         target: google_apis
         arch: x86
         profile: pixel_2
-        emulator-options: "-no-window -no-snapshot -gpu swiftshader_indirect -no-boot-anim"
+        emulator-options: "-verbose -no-window -no-snapshot -gpu swiftshader_indirect -no-boot-anim"
         force-avd-creation: true
         disable-linux-hw-accel: true
-        cores: 1
         ram-size: 2048
-        disk-size: 2G
+        disk-size: 4G
+        cores: 2
         emulator-boot-timeout: 1800
         script: |
           adb wait-for-device
@@ -87,10 +85,11 @@ jobs:
     # Debugging: Validate ADB and Emulator
     - name: Validate ADB and Emulator
       run: |
+        echo "Validating ADB devices..."
         adb devices
-        adb logcat -d > adb-logcat.log
+        adb logcat -d > adb-logcat.log || echo "ADB logcat failed."
         echo "ADB Logcat:"
-        cat adb-logcat.log
+        cat adb-logcat.log || echo "No ADB logs found."
 
     # Run Appium Tests
     - name: Run Appium Tests
@@ -98,18 +97,27 @@ jobs:
         echo "Starting Appium Tests..."
         mvn clean test -Dtest=newUserFlow.java | tee mvn-output.log
 
+    # Debugging: Ensure Logs Are Created
+    - name: Validate Log Creation
+      run: |
+        echo "Checking for log files..."
+        ls -l adb-logcat.log || echo "ADB logcat.log not found."
+        ls -l mvn-output.log || echo "Maven output log not found."
+
     # Upload Logs for Debugging
     - name: Upload Logs
-      if: failure()
+      if: always()
       uses: actions/upload-artifact@v3
       with:
         name: logs
         path: |
           adb-logcat.log
           mvn-output.log
+        if-no-files-found: warn
 
     # Shutdown Emulator
     - name: Shutdown Emulator
       run: |
         echo "Shutting down emulator..."
         adb emu kill || pkill -f emulator
+
