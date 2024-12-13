@@ -1,93 +1,37 @@
-name: Appium Android Test
+# This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://help.github.com/actions/language-and-framework-guides/building-and-testing-java-with-maven
+
+name: appium-android
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    branches: [ "main" ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-
+    runs-on: macos-latest # the machine type
+    strategy: # we are using strategy if we need to run on parallel with different devices and version
+      matrix:
+        api-level: [30] #Google api level for example [25,23,28] 
+        target: [default]
     steps:
-    # Step 1: Checkout Code
-    - name: Checkout Code
-      uses: actions/checkout@v3
-
-    # Step 2: Set Up Java
-    - name: Set up Java
-      uses: actions/setup-java@v3
+    - uses: actions/checkout@v2 #checkout the code 
+    - name: Set up JDK 1.8
+      uses: actions/setup-java@v1
       with:
-        java-version: 11
-        distribution: temurin
-
-    # Step 3: Set Up Android Environment
-    - name: Set Up Android Environment
+        java-version: 1.8
+    - name: Install and Run Appium Server
       run: |
-        mkdir -p $HOME/android-sdk/cmdline-tools
-        wget -nc https://dl.google.com/android/repository/commandlinetools-linux-7583922_latest.zip
-        unzip -o commandlinetools-linux-7583922_latest.zip -d $HOME/android-sdk/cmdline-tools
-        mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
-        export ANDROID_HOME=$HOME/android-sdk
-        export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
-        yes | sdkmanager --licenses
-        sdkmanager "platform-tools" "platforms;android-29" "build-tools;29.0.3" "emulator" "system-images;android-29;google_apis;x86"
-        adb version || echo "ADB is not properly installed."
-
-    # Step 4: Start Android Emulator
-    - name: Start Android Emulator
-      uses: reactivecircus/android-emulator-runner@v2
+         npm install -g appium@v1.20.2
+            appium -v
+            appium &>/dev/null &
+    - name: Run Appium Tests
+      uses: reactivecircus/android-emulator-runner@v1 # install and create the Emulator
       with:
-        api-level: 29
-        target: google_apis
-        arch: x86
-        profile: Nexus 5X
-        ram-size: 2048
-        disk-size: 6G
-        cores: 2
-        emulator-options: "-no-window -gpu swiftshader_indirect -no-boot-anim"
-        emulator-boot-timeout: 3000
-        avd-name: test
-        force-avd-creation: true
-        script: |
-          adb wait-for-device
-          for i in $(seq 1 20); do
-            if adb shell getprop sys.boot_completed | grep -q "1"; then
-              echo "Emulator is fully booted!"
-              break
-            else
-              echo "Waiting for emulator to boot... ($i/20)"
-              sleep 10
-            fi
-          done
-          adb devices
-
-    # Step 5: Run Tests
-    - name: Run Tests
-      run: |
-        mvn clean test -Dtest=newUserFlow.java | tee mvn-output.log
-
-    # Step 6: Capture Logs
-    - name: Capture Logs
-      run: |
-        adb logcat -d > adb-logcat.log || echo "Failed to capture logcat."
-        adb shell dumpsys > adb-dumpsys.log || echo "Failed to capture dumpsys."
-
-    # Step 7: Upload Logs
-    - name: Upload Logs
-      uses: actions/upload-artifact@v3
-      with:
-        name: logs
-        path: |
-          adb-logcat.log
-          adb-dumpsys.log
-          mvn-output.log
-        if-no-files-found: warn
-
-    # Step 8: Shutdown Emulator
-    - name: Shutdown Emulator
-      run: adb emu kill || pkill -f emulator
+        api-level: ${{ matrix.api-level }}
+        target: ${{ matrix.target }}
+        arch: x86_64
+        profile: Nexus 6
+   # script: ./mvn test --info 
+        script: mvn clean test -Pandroid # running our test with info to check the results
+  
