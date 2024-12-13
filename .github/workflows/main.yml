@@ -1,0 +1,97 @@
+name: Appium Android Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+    # Checkout Code
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    # Set up Java
+    - name: Set up Java
+      uses: actions/setup-java@v3
+      with:
+        java-version: 11
+        distribution: temurin
+
+    # Set up Android Environment
+    - name: Set Up Android Environment
+      run: |
+        mkdir -p $HOME/android-sdk/cmdline-tools
+        wget -nc https://dl.google.com/android/repository/commandlinetools-linux-7583922_latest.zip
+        unzip -o commandlinetools-linux-7583922_latest.zip -d $HOME/android-sdk/cmdline-tools
+        mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
+        export ANDROID_HOME=$HOME/android-sdk
+        export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
+        yes | sdkmanager --licenses
+        sdkmanager "platform-tools" "platforms;android-30" "build-tools;30.0.3" "emulator" "system-images;android-30;google_apis;x86"
+        echo "ANDROID_HOME=$ANDROID_HOME"
+        echo "PATH=$PATH"
+
+    # Start Android Emulator
+    - name: Start Android Emulator
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 30
+        target: google_apis
+        arch: x86
+        profile: pixel_2
+        emulator-options: "-no-window -no-snapshot -gpu swiftshader_indirect -no-boot-anim"
+        force-avd-creation: true
+        disable-linux-hw-accel: true
+        cores: 1
+        ram-size: 2048
+        disk-size: 2G
+        emulator-boot-timeout: 1800
+        script: |
+          adb wait-for-device
+          for i in $(seq 1 10); do
+            if adb -s emulator-5554 shell getprop sys.boot_completed | grep -q "1"; then
+              echo "Emulator fully booted!"
+              break
+            else
+              echo "Waiting for emulator to boot... ($i/10)"
+              sleep 15
+            fi
+          done
+
+          for i in $(seq 1 5); do
+            if adb shell input keyevent 82; then
+              echo "Key event sent successfully."
+              break
+            else
+              echo "Retrying key event... ($i/5)"
+              sleep 5
+            fi
+          done
+
+    # Debugging: Validate ADB and Emulator
+    - name: Validate ADB and Emulator
+      run: |
+        adb devices
+        adb logcat -d > adb-logcat.log
+        echo "ADB Logcat:"
+        cat adb-logcat.log
+
+    # Run Appium Tests
+    - name: Run Appium Tests
+      run: |
+        echo "Starting Appium Tests..."
+        mvn clean test -Dtest=newUserFlow.java | tee mvn-output.log
+
+    # Shutdown Emulator
+    - name: Shutdown Emulator
+      run: |
+        echo "Shutting down emulator..."
+        adb emu kill || pkill -f emulator
